@@ -191,43 +191,49 @@ def queryMapExtent(ext_lyr_url, sWhere):
     country_extent = response["extent"]
     return country_extent
 
-def copyFeatureLayers(flyr_itemId_lookup, country, new_folder):
-    # loop through flyr_itemId_lookup
-    # copy the feature layers and name them with the country name
+def copyFLayerSchema(flyr_items, country, new_folder):
+
     itemId_lookup = {}
-    for lyr_url in flyr_itemId_lookup:
+    for itmId in flyr_items:
+        lyr_item = gis.content.get(itmId)
+        lyr_url = lyr_item.url
         # Get the service name from the layer url
         service_name = lyr_url.split("/")[-2]
-        template_id = flyr_itemId_lookup[lyr_url]
-        lyr_item = gis.content.get(template_id)
 
         layer_ids = [layer.properties.id for layer in lyr_item.layers]
         table_ids = [table.properties.id for table in lyr_item.tables]
 
         new_service_name = "{}_{}".format(service_name, country)
         logger.info("\n\nTo create the layer : {}".format(new_service_name))
+        # copy the feature layers and name them with the country name
         item_copy = lyr_item.copy_feature_layer_collection(
             service_name = new_service_name,
             layers = layer_ids,
             tables = table_ids,
             folder = new_folder
         )
-        itemId_lookup[template_id] = item_copy
+        itemId_lookup[itmId] = item_copy.id
 
     logger.info("\n\nItem id lookup: {}".format(itemId_lookup))
+    return itemId_lookup
 
+def getUrlLookup(itemId_lookup):
     url_lookup = {}
-    for fl_url in flyr_itemId_lookup:
-        temp_item_id = flyr_itemId_lookup[fl_url]
-        new_fl_url = itemId_lookup[temp_item_id].url
-        url_lookup[fl_url] = new_fl_url
+    for template_id in itemId_lookup:
+        template_item = gis.content.get(template_id)
+        template_flUrl = template_item.url
+
+        new_id = itemId_lookup[template_id]
+        new_item = gis.content.get(new_id)
+        new_flUrl = new_item.url
+
+        url_lookup[template_flUrl] = new_flUrl
 
     logger.info("\n\nUrl lookup: {}".format(url_lookup))
+    return url_lookup
 
-    return itemId_lookup, url_lookup
 
-
-def processTask(task, naming_patterns, init_extent_config, flyr_itemId_lookup, webmap_item, wab_template_item):
+def processTask(task, naming_patterns, init_extent_config, flyr_items, webmap_item, wab_template_item):
     country = task["country"]
     new_folder_name = naming_patterns["folder_pattern"].replace('{country}', country)
     new_folder = getFolder(new_folder_name)
@@ -237,10 +243,14 @@ def processTask(task, naming_patterns, init_extent_config, flyr_itemId_lookup, w
     sWhere = init_extent_config["where"].replace('{country}', country)
     country_extent = queryMapExtent(ext_lyr_url, sWhere)
 
-    itemId_lookup, url_lookup = copyFeatureLayers(flyr_itemId_lookup, country, new_folder)
+    # itemId_lookup = copyFLayerSchema(flyr_items, country, new_folder)
+    itemId_lookup = {'3ae011ba86d14354b32300f59725ee97': 'dde6bb2474dd45179709a3cbfe32aee7', '453b9c3fba714775aa9e776e49d50f1f': '4e110bda1e6441a1bc70ecb74a8c24ef'}
 
-    new_webmap = createWebMap(webmap_item, itemId_lookup, url_lookup, country_extent, country, naming_patterns)
+    url_lookup = getUrlLookup(itemId_lookup)
 
+
+    new_webmap = copyWebMap(webmap_item, new_folder, itemId_lookup, url_lookup, country_extent, country, naming_patterns)
+    return
     new_wab = createWABApp(wab_template_item, new_webmap, itemId_lookup, url_lookup, country, naming_patterns)
 
 def replaceUrlItemIds(aJson, itemId_lookup, url_lookup):
@@ -260,15 +270,22 @@ def replaceUrlItemIds(aJson, itemId_lookup, url_lookup):
     return str_json
 
 def createItemFromJson(oldItem, str_json, newTitle, country):
+    # try clone the item first, then update the title, tags, and text
 
-    new_item_properties = oldItem.properties
+    new_item_properties = {} #oldItem.properties
     # remove the id, owner, created, and url properties
-    new_item_properties.pop("id", None)
-    new_item_properties.pop("owner", None)
-    new_item_properties.pop("created", None)
-    new_item_properties.pop("url", None)
+    # new_item_properties.pop("id", None)
+    # new_item_properties.pop("owner", None)
+    # new_item_properties.pop("created", None)
+    # new_item_properties.pop("url", None)
     new_item_properties["title"] = newTitle
-    new_item_properties["tags"] = "{},{}".format(new_item_properties["tags"], country)
+    new_item_properties["tags"] = "{},{}".format(oldItem.tags, country)
+    new_item_properties["typeKeywords"] = oldItem.typeKeywords
+    new_item_properties["description"] = oldItem.description
+    new_item_properties["snippet"] = oldItem.snippet
+    new_item_properties["accessInformation"] = oldItem.accessInformation
+    new_item_properties["licenseInfo"] = oldItem.licenseInfo
+    new_item_properties["type"] = oldItem.type
     new_item_properties["text"] = str_json
 
     logger.info("\n\nCreating the new item: {}".format(new_item_properties["title"]))
@@ -294,14 +311,56 @@ def createWABApp(wab_template_item, new_webmap, itemId_lookup, url_lookup, count
     return createItemFromJson(webmap_item, str_json, appTitle, country)
 
 
-def createWebMap(webmap_item, itemId_lookup, url_lookup, country_extent, country, naming_patterns):
-    webmap_json = webmap_item.get_data(try_json=True)
+def copyWebMap(webmap_item, new_folder, itemId_lookup, url_lookup, country_extent, country, naming_patterns):
+
+    newTitle = naming_patterns["webmap_title_patern"].replace('{country}', country)
+    newMap_properties = {}
+    newMap_properties["title"] = newTitle
+    newMap_properties["snippet"] = webmap_item.snippet
+    newMap_properties["tags"] = "{},{}".format(webmap_item.tags, country)
+    newMap_properties["typeKeywords"] = webmap_item.typeKeywords
+
+    newWebMap = WebMap(webmap_item)
+    newWebMap.extent = country_extent
+    # loop through the layers and replace the layer urls and item ids
+    for layer in newWebMap.layers:
+        try:
+            layer['itemId'] = itemId_lookup[layer['itemId']]
+            layer['url'] = url_lookup[layer['url']]
+        except Exception as e:
+            pass
+
+    newMap_item = WebMap(webmap_item).save(newMap_properties, folder=new_folder)
+
+    return newMap_item
+
+    # Clone the web map
+    newMap_item = gis.content.clone_items(items=[webmap_item.id], folder=new_folder, copy_data=False, search_existing_items=False, item_mapping = itemId_lookup)
+
+    newMap = WebMap(newMap_item)
+    newMap.extent = country_extent
+    newMap.update(item_properties = {"title": newTitle})
+
+    return newMap
+
+    webmap_json = newMap.get_data(try_json=True)
     str_json = replaceUrlItemIds(webmap_json, itemId_lookup, url_lookup)
-    newTitle = naming_patterns["webmap_pattern"].replace('{country}', country)
 
     return createItemFromJson(webmap_item, str_json, newTitle, country)
 
-def getLayerUrlItemLookup(wab_template_itemId):
+def get_layer_item_ids(wm):
+    wmo = WebMap(wm)
+    wm_id_list = []
+    for layer in wmo.layers:
+        try:
+            fsvc = FeatureLayerCollection(layer['url'][:-1], gis)
+            if not fsvc.properties['serviceItemId'] in wm_id_list:
+                wm_id_list.append(fsvc.properties['serviceItemId'])
+        except Exception as e:
+            pass
+    return wm_id_list
+
+def getAppMapLayerItems(wab_template_itemId):
     # Get the web map json
     wab_template_item = gis.content.get(wab_template_itemId)
     wab_template_json = wab_template_item.get_data(try_json=True)
@@ -310,36 +369,10 @@ def getLayerUrlItemLookup(wab_template_itemId):
     webmap_id = wab_template_json['map']['itemId']
     logger.info("\n\nWeb map id: {}".format(webmap_id))
     webmap_item = gis.content.get(webmap_id)
+    items_in_wm = get_layer_item_ids(webmap_item)
+    logger.info("\n\nItems in web map: {}".format(items_in_wm))
 
-    webmap_json = webmap_item.get_data(try_json=True)
-
-    # get the operational layers in the web map
-    operational_layers = webmap_json['operationalLayers']
-    # logger.info("\n\nOperational layers: {}".format(operational_layers))
-    template_img_lyr_name = parameters['webmap_OptLayers']["template_img_lyr_name"]
-    template_feature_lyr_names = parameters['webmap_OptLayers']["template_feature_lyr_names"]
-    # ToDo: republish the template image layer later
-    # Find the template feature layers
-    flyr_itemId_lookup = {}
-    for lyr in operational_layers:
-        lyr_url = lyr['url'].lower()
-        # if the url ends with a number, remove the number and the slash
-        if lyr_url[-1].isdigit():
-            lyr_url = lyr_url[:-2]
-        # if the layer url string includes the template feature layer name and the layer url is not already in the list of template feature layer urls
-        for template_feature_lyr_name in template_feature_lyr_names:
-            logger.info("\n\nTemplate feature layer name: {}".format("/{}/FeatureLayer".format(template_feature_lyr_name).lower() ))
-            logger.info("{}".format(lyr_url))
-            if "/{}/FeatureServer".format(template_feature_lyr_name).lower() in lyr_url:
-                if lyr_url not in flyr_itemId_lookup:
-                    flyr_itemId_lookup[lyr_url] = lyr['itemId'] if ('itemId' in lyr and lyr['itemId'] is not None) else None
-                else:
-                    if flyr_itemId_lookup[lyr_url] is None and 'itemId' in lyr:
-                        flyr_itemId_lookup[lyr_url] = lyr['itemId']
-    logger.info("\n\nTemplate feature layer item id lookup: {}".format(flyr_itemId_lookup))
-
-    return flyr_itemId_lookup, webmap_item, wab_template_item
-
+    return wab_template_item, webmap_item, items_in_wm
 
 if __name__ == "__main__":
 
@@ -365,7 +398,7 @@ if __name__ == "__main__":
         gis = GIS(portal_url, the_username, the_password)
 
         wab_template_itemId = parameters['wab_template_itemId']
-        flyr_itemId_lookup, webmap_item, wab_template_item = getLayerUrlItemLookup(wab_template_itemId)
+        wab_template_item, webmap_item, flyr_items = getAppMapLayerItems(wab_template_itemId)
 
         naming_patterns = parameters['naming_patterns']
         init_extent_config = parameters['init_extent_config']
@@ -374,7 +407,7 @@ if __name__ == "__main__":
         for task in tasks:
             logger.info("\n\n\n *********** {} *************".format(task["country"]))
             task_start_time = time.time()
-            processTask(task, naming_patterns, init_extent_config, flyr_itemId_lookup, webmap_item, wab_template_item)
+            processTask(task, naming_patterns, init_extent_config, flyr_items, webmap_item, wab_template_item)
             logger.info("\n\n\n ... task run time: {0} Minutes".format(round(((time.time() - task_start_time) / 60), 2)))
 
     except Exception:
