@@ -1,18 +1,13 @@
 {
   "log_folder": "C:\\dev\\UN_WFP\\logs",
 
-  "wab_template_itemId": "05c0be7b06714fa8b209213f5b54442d",
-  "webmap_OptLayers": {
-    "template_img_lyr_name": "NER_IS_DashTempl/ImageServer",
-    "template_feature_lyr_names": ["ner_LIAassets_dashboard_template", "NER_Assets_Dashboard_Template"]
-  },
+  "wab_template_itemId": "93f531d4fa4f407a989e354da5592925",
+  "template_country": "Niger",
   "naming_patterns" : {
-    "folder_pattern": "AIMS_Dashboard_Items_{country}",
-    "app_title_patern": "Dashboard for {country}",
-    "webmap_title_patern": "AIMS_Map_Dashboard_{country}",
-    "comment": "If the tiles are not available, appending sequence numbers"
+    "folder_pattern": "AIMS {country}",
+    "app_title_patern": "AIMS Dashboard for {country}",
+    "webmap_title_patern": "AIMS Map for {country}"
   },
-
   "init_extent_config": {
     "layer_url": "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries/FeatureServer/0",
     "where": "LAND_TYPE = 'Primary land' and upper(COUNTRY) = upper('{country}')"
@@ -20,12 +15,13 @@
   "tasks": [
     {
       "country": "Kenya",
-      "img_lyr": {
-        "itemId": "ce6de5349ac04aa7a949ad42b4027021",
-        "url": "https://gis.wfp.org/arcgis/rest/services/NER_IS_DashTempl/ImageServer"
-      },
-      "print_template": "xxxxx",
-      "comemnt": "new template for each country. Default to the template for this country"
+      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021",
+      "print_template": "xxxxx"
+    },
+    {
+      "country": "Congo",
+      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021",
+      "print_template": "xxxxx"
     }
   ],
 
