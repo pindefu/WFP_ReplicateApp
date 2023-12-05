@@ -6,22 +6,31 @@
   "naming_patterns" : {
     "folder_pattern": "AIMS {country}",
     "app_title_patern": "AIMS Dashboard for {country}",
-    "webmap_title_patern": "AIMS Map for {country}"
+    "webmap_title_patern": "AIMS Map for {country}",
+    "featureLayer_title_prefix": "{ISO_CC}",
+    "default_print_layout": "{ISO_CC}_Layout"
   },
   "init_extent_config": {
+    "layer_url": "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries/FeatureServer/0",
+    "where": "LAND_TYPE = 'Primary land' and upper(COUNTRY) = upper('{country}')",
+    "expand_factor": 1.5
+  },
+  "ISO_CC_lookup": {
     "layer_url": "https://services.arcgis.com/P3ePLMYs2RVChkJx/arcgis/rest/services/World_Countries/FeatureServer/0",
     "where": "LAND_TYPE = 'Primary land' and upper(COUNTRY) = upper('{country}')"
   },
   "tasks": [
     {
       "country": "Kenya",
-      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021",
-      "print_template": "xxxxx"
+      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021"
     },
     {
-      "country": "Congo",
-      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021",
-      "print_template": "xxxxx"
+      "country": "Afghanistan",
+      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021"
+    },
+    {
+      "country": "South Africa",
+      "img_lyr_itemd_id": "ce6de5349ac04aa7a949ad42b4027021"
     }
   ],
 

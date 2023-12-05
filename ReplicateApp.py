@@ -172,17 +172,38 @@ def getFolder(folder_name):
 
     return folder_name
 
-def queryMapExtent(ext_lyr_url, sWhere):
+def expand_extent(extent, expand_factor):
+    # calculate the length of the extent in the x and y direction
+    x_length = extent["xmax"] - extent["xmin"]
+    y_length = extent["ymax"] - extent["ymin"]
+    # calcualte delta x and delta y
+    delta_x = x_length * (expand_factor - 1) / 2
+    delta_y = y_length * (expand_factor - 1) / 2
+    # expand the extent
+    extent["xmin"] = extent["xmin"] - delta_x
+    extent["xmax"] = extent["xmax"] + delta_x
+    extent["ymin"] = extent["ymin"] - delta_y
+    extent["ymax"] = extent["ymax"] + delta_y
+    return extent
+
+def queryMapExtent(init_extent_config, country):
+    ext_lyr_url = init_extent_config["layer_url"]
+    sWhere = init_extent_config["where"].replace('{country}', country)
+    expand_factor = init_extent_config["expand_factor"]
     # Query for the default extent for the web map
     extent_lyr = FeatureLayer(ext_lyr_url)
     response = extent_lyr.query(where=sWhere, return_extent_only=True, out_sr=102100)
     logger.info("\n\nExtent query response: {}".format(response))
     country_extent = response["extent"]
+    expaned_extent = expand_extent(country_extent, expand_factor)
+    logger.info("\n\tExpanded extent: {}".format(expaned_extent))
     return country_extent
 
-def cloneFeatureLayers(fLyr_items, country, new_folder):
+def cloneFeatureLayers(fLyr_items, template_country_CC, country_CC, new_folder, naming_patterns):
 
     itemId_lookup = {}
+    featureLayer_title_prefix = naming_patterns["featureLayer_title_prefix"]
+    featureLayer_title_prefix = featureLayer_title_prefix.replace('{ISO_CC}', country_CC)
     for itmId in fLyr_items:
         lyr_item = gis.content.get(itmId)
         lyr_url = lyr_item.url
@@ -192,7 +213,9 @@ def cloneFeatureLayers(fLyr_items, country, new_folder):
         layer_ids = [layer.properties.id for layer in lyr_item.layers]
         table_ids = [table.properties.id for table in lyr_item.tables]
 
-        new_service_name = "{}_{}".format(service_name, country)
+        pattern = r'(?i)' + template_country_CC
+        new_service_name = re.sub(pattern, featureLayer_title_prefix.lower(), service_name)
+        #new_service_name = featureLayer_title_prefix.replace('{country}', country) + service_name
         logger.info("\nCreating layer: {}".format(new_service_name))
         # copy the feature layers and name them with the country name
         item_copy = lyr_item.copy_feature_layer_collection(
@@ -222,17 +245,15 @@ def getUrlLookup(itemId_lookup):
     return url_lookup
 
 
-def processTask(task, naming_patterns, template_country_name, init_extent_config, fLyr_items, imgLyr_items, webmap_item, wab_template_item):
+def processTask(task, naming_patterns, template_country_name, template_country_CC, init_extent_config, fLyr_items, imgLyr_items, webmap_item, wab_template_item):
     country = task["country"]
     new_folder_name = naming_patterns["folder_pattern"].replace('{country}', country)
     new_folder = getFolder(new_folder_name)
 
     # create a feature layer object using a url
-    ext_lyr_url = init_extent_config["layer_url"]
-    sWhere = init_extent_config["where"].replace('{country}', country)
-    country_extent = queryMapExtent(ext_lyr_url, sWhere)
-
-    itemId_lookup = cloneFeatureLayers(fLyr_items, country, new_folder)
+    country_extent = queryMapExtent(init_extent_config, country)
+    country_CC = lookup_CC(ISO_CC_lookup, country)
+    itemId_lookup = cloneFeatureLayers(fLyr_items, template_country_CC, country_CC, new_folder, naming_patterns)
     if len(imgLyr_items) > 0 and "img_lyr_itemd_id" in task:
         itemId_lookup[imgLyr_items[0]] = task['img_lyr_itemd_id']
 
@@ -244,7 +265,7 @@ def processTask(task, naming_patterns, template_country_name, init_extent_config
 
     logger.info("\n\nLayer and map id lookup: {}".format(itemId_lookup))
 
-    new_wab = cloneWABApp(wab_template_item, new_webmap, itemId_lookup, country_extent, template_country_name, new_folder, country, naming_patterns)
+    new_wab = cloneWABApp(wab_template_item, new_folder, itemId_lookup, country_extent, template_country_name, country, country_CC, naming_patterns)
     return new_wab
 
 def migrate_resources(old_item, new_item, overwrite=True):
@@ -302,18 +323,26 @@ def replaceCountryName(str_json, sourceCountryName, targetCountryName):
     return str_json
 
 
-def cloneWABApp(wab_template_item, new_webmap, itemId_lookup, country_extent, template_country_name, new_folder, country, naming_patterns):
+def cloneWABApp(wab_template_item, new_folder, itemId_lookup, country_extent, template_country_name, country, country_CC, naming_patterns):
     logger.info("\nTo clone the app")
     cloned_items = gis.content.clone_items(items=[wab_template_item], folder=new_folder, copy_data=False, search_existing_items=False, item_mapping = itemId_lookup)
     new_wab_item = cloned_items[0]
     logger.info("\nCloned the app. New ID: {}".format(new_wab_item.id))
 
-    logger.info("\nTo update the app title, country text, init extent, and appItemId")
+    logger.info("\nTo update the app title, country text, init extent, appItemId, and default layout")
     wab_json = new_wab_item.get_data(try_json=True)
     appTitle = naming_patterns["app_title_patern"].replace('{country}', country)
     wab_json["title"] = appTitle
     wab_json["appItemId"] = new_wab_item.id
     wab_json['map']['mapOptions']['extent'] = country_extent
+    default_print_layout = naming_patterns["default_print_layout"]
+    default_print_layout = default_print_layout.replace('{ISO_CC}', country_CC)
+
+    # In the json, find the widget under widgetOnScreen/widgets if it has uri key and uri == "widgets/Print/Widget"
+    printWidget = next((item for item in wab_json['widgetOnScreen']['widgets'] if item.get('uri', None) == 'widgets/Print/Widget'), None)
+    if printWidget:
+        printWidget['config']['defaultLayout'] = default_print_layout
+        logger.info("\tFound Print widget default layout in JSON. Updated to: {}".format(printWidget['config']['defaultLayout']))
 
     str_json = json.dumps(wab_json)
     str_json = replaceCountryName(str_json, template_country_name, country)
@@ -373,6 +402,19 @@ def getAppMapLayerItems(wab_template_itemId):
 
     return wab_template_item, webmap_item, fl_items_in_wm, imgl_items_in_wm
 
+def lookup_CC(ISO_CC_lookup, country_name):
+    lookup_lyr = FeatureLayer(ISO_CC_lookup["layer_url"])
+    sWhere = ISO_CC_lookup["where"].replace('{country}', country_name)
+    response = lookup_lyr.query(where=sWhere, out_fields="ISO_CC", return_geometry=False)
+    #logger.info("\n\tISO_CC query response: {}".format(response))
+    if len(response.features) > 0:
+        county_cc = response.features[0].attributes["ISO_CC"]
+        logger.info("\n\tFound ISO_CC {}: {}".format(country_name, county_cc))
+        return county_cc
+    else:
+        logger.info("\n\tCouldn't found ISO_CC {}. Will use the country name instead".format(country_name))
+        return country_name
+
 if __name__ == "__main__":
 
     # Get Start Time
@@ -400,15 +442,17 @@ if __name__ == "__main__":
 
         wab_template_itemId = parameters['wab_template_itemId']
         wab_template_item, webmap_item, fLyr_items, imgLyr_items = getAppMapLayerItems(wab_template_itemId)
-        template_country_name = parameters['template_country']
         naming_patterns = parameters['naming_patterns']
         init_extent_config = parameters['init_extent_config']
+        ISO_CC_lookup = parameters['ISO_CC_lookup']
+        template_country_name = parameters['template_country']
+        template_country_CC = lookup_CC(ISO_CC_lookup, template_country_name)
 
         tasks = parameters["tasks"]
         for task in tasks:
             logger.info("\n\n *********** Processing: {} *************".format(task["country"]))
             task_start_time = time.time()
-            processTask(task, naming_patterns, template_country_name, init_extent_config, fLyr_items, imgLyr_items, webmap_item, wab_template_item)
+            processTask(task, naming_patterns, template_country_name, template_country_CC, init_extent_config, fLyr_items, imgLyr_items, webmap_item, wab_template_item)
             logger.info("\n ------ task run time: {0} Minutes".format(round(((time.time() - task_start_time) / 60), 2)))
 
     except Exception:
