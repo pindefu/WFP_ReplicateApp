@@ -4,7 +4,7 @@
   "wab_template_itemId": "93f531d4fa4f407a989e354da5592925",
   "template_country": "Niger",
   "naming_patterns" : {
-    "folder_pattern": "AIMS {country}",
+    "folder_pattern": "AIMS {ISO_CC}",
     "app_title_patern": "AIMS Dashboard for {country}",
     "webmap_title_patern": "AIMS Map for {country}",
     "featureLayer_title_prefix": "{ISO_CC}",

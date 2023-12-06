@@ -247,19 +247,22 @@ def getUrlLookup(itemId_lookup):
 
 def processTask(task, naming_patterns, template_country_name, template_country_CC, init_extent_config, fLyr_items, imgLyr_items, webmap_item, wab_template_item):
     country = task["country"]
+
+    country_CC = lookup_CC(ISO_CC_lookup, country)
     new_folder_name = naming_patterns["folder_pattern"].replace('{country}', country)
+    new_folder_name = new_folder_name.replace('{ISO_CC}', country_CC)
     new_folder = getFolder(new_folder_name)
 
-    # create a feature layer object using a url
     country_extent = queryMapExtent(init_extent_config, country)
-    country_CC = lookup_CC(ISO_CC_lookup, country)
+
+    # create a feature layer object using a url
     itemId_lookup = cloneFeatureLayers(fLyr_items, template_country_CC, country_CC, new_folder, naming_patterns)
     if len(imgLyr_items) > 0 and "img_lyr_itemd_id" in task:
         itemId_lookup[imgLyr_items[0]] = task['img_lyr_itemd_id']
 
     logger.info("\n\nLayer id lookup: {}".format(itemId_lookup))
 
-    new_webmap = cloneWebMap(webmap_item, new_folder, itemId_lookup, country_extent, country, naming_patterns)
+    new_webmap = cloneWebMap(webmap_item, new_folder, itemId_lookup, country_extent, country, country_CC, naming_patterns)
     new_webmap_id = new_webmap.item.id
     itemId_lookup[webmap_item.id] = new_webmap_id
 
@@ -332,6 +335,7 @@ def cloneWABApp(wab_template_item, new_folder, itemId_lookup, country_extent, te
     logger.info("\nTo update the app title, country text, init extent, appItemId, and default layout")
     wab_json = new_wab_item.get_data(try_json=True)
     appTitle = naming_patterns["app_title_patern"].replace('{country}', country)
+    appTitle = appTitle.replace('{ISO_CC}', country_CC)
     wab_json["title"] = appTitle
     wab_json["appItemId"] = new_wab_item.id
     wab_json['map']['mapOptions']['extent'] = country_extent
@@ -353,13 +357,14 @@ def cloneWABApp(wab_template_item, new_folder, itemId_lookup, country_extent, te
 
     return new_wab_item
 
-def cloneWebMap(webmap_item, new_folder, itemId_lookup, country_extent, country, naming_patterns):
+def cloneWebMap(webmap_item, new_folder, itemId_lookup, country_extent, country, country_CC, naming_patterns):
     logger.info("\nTo clone the web map")
     cloned_items = gis.content.clone_items(items=[webmap_item], folder=new_folder, copy_data=False, search_existing_items=False, item_mapping = itemId_lookup)
     logger.info("\nCloned the web map. ID: {}".format(cloned_items[0].id))
     logger.info("\nTo update the web map title")
     newMap = WebMap(cloned_items[0])
     newTitle = naming_patterns["webmap_title_patern"].replace('{country}', country)
+    newTitle = newTitle.replace('{ISO_CC}', country_CC)
     # set the new map's extent to the country extent
     newMap.item.extent = country_extent
     newMap.item.spatialReference = country_extent['spatialReference']
